@@ -838,6 +838,8 @@ STR_LINKGRAPH_STATS_TOOLTIP_USAGE                               :{}Usage: {CARGO
 STR_LINKGRAPH_STATS_TOOLTIP_PLANNED                             :{}Planned: {CARGO_LONG}
 STR_LINKGRAPH_STATS_TOOLTIP_DISTANCE                            :Manhattan Distance: {COMMA} tile{P 0 "" s}{}Bird Fly Distance: {COMMA} tile{P 1 "" s}
 
+STR_LINKGRAPH_STATS_TOOLTIP_TITLE                               :Example Title
+
 STR_LINKGRAPH_STATS_TOOLTIP_PRODUCTION_INTERVAL                 :{BLACK}{CARGO_LONG} to be transported per production interval from {STATION} to {STATION} ({COMMA}% of capacity){RAW_STRING}
 
 STR_RAIL_TOOLBAR_TOOLTIP_BUILD_POLYRAIL                         :{BLACK}Build railway track using the polyline mode. Ctrl toggles build/remove for railway construction. Shift toggles building/showing cost estimate

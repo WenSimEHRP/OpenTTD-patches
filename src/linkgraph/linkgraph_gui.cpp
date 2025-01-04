@@ -21,12 +21,14 @@
 #include "../strings_func.h"
 #include "../core/geometry_func.hpp"
 #include "../widgets/link_graph_legend_widget.h"
+#include "../widgets/misc_widget.h"
 
 #include "table/strings.h"
 
 #include "../3rdparty/cpp-btree/btree_map.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "../safeguards.h"
 
@@ -56,6 +58,135 @@ const uint8_t LinkGraphOverlay::LINK_COLOURS[][12] = {
 	0x04, 0x03, 0x02, 0x01
 }
 };
+
+static constexpr NWidgetPart _nested_link_graph_tooltip_widgets[] = {
+	NWidget(WWT_PANEL, COLOUR_GREY, WID_TT_BACKGROUND), SetMinimalSize(64, 32), EndContainer(),
+};
+
+static WindowDesc _link_graph_tooltip_desc(__FILE__, __LINE__,
+	WDP_MANUAL, nullptr, 0, 0,
+	WC_LINKGRAPH_TOOLTIP_WINDOW, WC_NONE,
+	0,
+	_nested_link_graph_tooltip_widgets
+	);
+
+struct LinkGraphTooltipWindow: public Window
+{
+private:
+	const Window *parent;
+	const LinkGraphOverlay::LinkList *cached_links;
+	static const uint LINKGRAPH_TOOLTIP_MAX_ROWS = 0xFF;
+	static const uint LINKGRAPH_TOOLTIP_MAX_COLUMNS = 2;
+	uint widths[LINKGRAPH_TOOLTIP_MAX_COLUMNS];
+public:
+	std::string data[LINKGRAPH_TOOLTIP_MAX_ROWS][LINKGRAPH_TOOLTIP_MAX_COLUMNS]{};
+
+	LinkGraphTooltipWindow(const Window *parent, const LinkGraphOverlay::LinkList *cached_links) : Window(_link_graph_tooltip_desc)
+	{
+		this->parent = parent;
+		this->cached_links = cached_links;
+		this->InitNested();
+		CLRBITS(this->flags, WF_WHITE_BORDER);
+	}
+
+	Point OnInitialPosition(int16_t sm_width, int16_t sm_height, int window_number) override
+	{
+		const int scr_top = GetMainViewTop() + 2;
+		const int scr_bot = GetMainViewBottom() - 2;
+
+		Point pt {};
+		pt.y = Clamp(_cursor.pos.y + _cursor.total_size.y + _cursor.total_offs.y + 5, scr_top, scr_bot);
+		if (pt.y + sm_height > scr_bot) pt.y = std::min(_cursor.pos.y + _cursor.total_offs.y - 5, scr_bot) - sm_height;
+		pt.x = sm_width >= _screen.width ? 0 : Clamp(_cursor.pos.x - (sm_width >> 1), 0, _screen.width - sm_width);
+
+		return pt;
+	}
+
+	void OnInit() override
+	{
+		this->data[0][0] = GetString(STR_LINKGRAPH_STATS_TOOLTIP_TITLE);
+		this->data[0][1] = GetString(STR_CONFIG_SETTING_TIMETABLE_IN_TICKS_HELPTEXT);
+		this->data[1][0] = GetString(STR_CONFIG_SETTING_TIMETABLE_IN_TICKS_HELPTEXT);
+		this->data[1][1] = GetString(STR_LINKGRAPH_STATS_TOOLTIP_TITLE);
+		for (LinkGraphOverlay::LinkList::const_reverse_iterator i(this->cached_links->rbegin()); i != this->cached_links->rend(); ++i) {
+			Point pta = i->from_pt;
+			Point ptb = i->to_pt;
+			StationID from = i->from_id;
+			StationID to = i->to_id;
+			SetDParam(0, from);
+			this->data[2][0] = GetString(STR_FORMAT_DEPOT_NAME_AIRCRAFT);
+		}
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size, const Dimension &padding, Dimension &fill, Dimension &resize) override
+	{
+		if (widget != 0) return;
+
+		size.height = WidgetDimensions::scaled.framerect.Vertical() + 2;
+
+		for (uint i = 0; i <= LINKGRAPH_TOOLTIP_MAX_ROWS; i++) {
+			if (this->data[i][0].empty()) break;
+
+			// loop through the columns, and set the widths
+			for (uint j = 0; j < LINKGRAPH_TOOLTIP_MAX_COLUMNS; j++) {
+				const uint width = GetStringBoundingBox(this->data[i][j]).width + WidgetDimensions::scaled.framerect.Horizontal();
+				this->widths[j] = std::max(this->widths[j], width);
+			}
+
+			// get total width
+			uint width = 0;
+			for (uint j = 0; j < LINKGRAPH_TOOLTIP_MAX_COLUMNS; j++) {
+				width += this->widths[j];
+			}
+
+			size.width = std::max(size.width, width);
+			size.height += GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal;
+		}
+
+		size.height -= WidgetDimensions::scaled.vsep_normal;
+	}
+
+	void DrawWidget(const Rect &r, WidgetID widget) const override
+	{
+		/* draw widget outlines */
+		GfxFillRect(r.left, r.top, r.right, r.top + WidgetDimensions::scaled.bevel.top - 1, PC_BLACK);
+		GfxFillRect(r.left, r.bottom - WidgetDimensions::scaled.bevel.bottom + 1, r.right, r.bottom, PC_BLACK);
+		GfxFillRect(r.left, r.top, r.left + WidgetDimensions::scaled.bevel.left - 1,  r.bottom, PC_BLACK);
+		GfxFillRect(r.right - WidgetDimensions::scaled.bevel.right + 1, r.top, r.right, r.bottom, PC_BLACK);
+
+		/* draw the table lines using GfxFillRect */
+		for (uint col = 0; col < LINKGRAPH_TOOLTIP_MAX_COLUMNS; col++) {
+			const int x = r.left + this->widths[col];
+			GfxFillRect(x, r.top, x + WidgetDimensions::scaled.bevel.left - 1, r.bottom, PC_BLACK);
+		}
+
+		for (uint row = 0; row < LINKGRAPH_TOOLTIP_MAX_ROWS; row++) {
+			for (uint col = 0; col < LINKGRAPH_TOOLTIP_MAX_COLUMNS; col++) {
+				if (this->data[row][col].empty()) break;
+				int left = r.left + WidgetDimensions::scaled.framerect.left + 1;
+				for (uint i = 0; i < col; i++) {
+					left += this->widths[i];
+				}
+				int top = r.top + WidgetDimensions::scaled.framerect.top + 1 + (GetCharacterHeight(FS_NORMAL) + WidgetDimensions::scaled.vsep_normal) * row;
+				int right = left + this->widths[col];
+				DrawString(left, right, top, this->data[row][col], TC_BLACK);
+			}
+		}
+	}
+
+	void OnMouseLoop() override
+	{
+		if (!_cursor.in_window || !(_settings_client.gui.hover_delay_ms == 0 ? _right_button_down : _mouse_hovering)) {
+			this->Close();
+		}
+	}
+};
+
+void GuiShowLinkGraphTooltipWindow(const Window *parent, const LinkGraphOverlay::LinkList *cached_links) {
+	CloseWindowById(WC_LINKGRAPH_TOOLTIP_WINDOW, 0);
+	new LinkGraphTooltipWindow(parent, cached_links);
+}
+
 
 /**
  * Get a DPI for the widget we will be drawing to.
@@ -663,11 +794,12 @@ bool LinkGraphOverlay::ShowTooltip(Point pt, TooltipCloseCondition close_cond)
 			} else {
 				msg = STR_LINKGRAPH_STATS_TOOLTIP_MONTH;
 			}
-			GuiShowTooltips(this->window, msg, close_cond);
+			// GuiShowTooltips(this->window, msg, close_cond);
+			GuiShowLinkGraphTooltipWindow(this->window, &this->cached_links);
 			return true;
 		}
 	}
-	GuiShowTooltips(this->window, STR_NULL, close_cond);
+	// GuiShowTooltips(this->window, STR_NULL, close_cond);
 	return false;
 }
 

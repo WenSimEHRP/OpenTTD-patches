@@ -814,6 +814,8 @@ enum WindowClass {
 	 */
 	WC_MODIFIER_KEY_TOGGLE,
 
+	WC_LINKGRAPH_TOOLTIP_WINDOW,
+
 	WC_END,              ///< End sentinel.
 	WC_INVALID = 0xFFFF, ///< Invalid window.
 };
